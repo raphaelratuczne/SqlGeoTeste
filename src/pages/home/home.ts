@@ -1,7 +1,10 @@
 import { Component, OnInit } from '@angular/core';
 import { NavController } from 'ionic-angular';
 import { SQLite, SQLiteObject } from '@ionic-native/sqlite';
-import { Geolocation } from '@ionic-native/geolocation';
+import { GoogleMaps,
+         GoogleMap,
+         GoogleMapsEvent,
+         Geocoder } from '@ionic-native/google-maps';
 
 import { cities } from './cities';
 
@@ -11,9 +14,14 @@ import { cities } from './cities';
 })
 export class HomePage implements OnInit {
 
+  private map: GoogleMap;
+
+  public code: string;
+  public city: string;
+
   constructor(public navCtrl: NavController,
               private sqlite: SQLite,
-              private geolocation: Geolocation) {
+              private googleMaps: GoogleMaps) {
     // cria o banco de dados
     this.sqlite.create({
       name: 'cities.db',
@@ -48,18 +56,76 @@ export class HomePage implements OnInit {
       })
       .catch(e => console.log(e));
 
-    // pega a posicao
-    this.geolocation.getCurrentPosition()
-      .then((resp) => {
-        console.log('posicao atual: ',resp.coords.latitude ,resp.coords.longitude)
-      }).catch((error) => {
-        console.log('Error getting location', error);
-      });
 
   }
 
   ngOnInit() {
+    this.loadMap();
+  }
 
+  loadMap() {
+
+    // inicializa o mapa
+    this.map = this.googleMaps.create('map_canvas');
+
+    // quando o mapa estiver pronto
+    this.map.one(GoogleMapsEvent.MAP_READY)
+      .then(() => {
+        console.log('Map is ready!');
+
+        // pega o local do usuario
+        this.map.getMyLocation()
+          .then( resp => {
+
+            console.log('minha localização:', resp);
+
+            // seta no mapa
+            this.map.setCameraTarget(resp.latLng);
+            this.map.setCameraZoom(18);
+            this.map.setCameraTilt(30);
+            this.map.setMyLocationEnabled(true);
+
+            // adiciona um marcador
+            this.map.addMarker({
+              title: 'Ionic',
+              icon: 'red',
+              animation: 'DROP',
+              position: {
+                lat: resp.latLng.lat,
+                lng: resp.latLng.lng
+              }
+            });
+
+            Geocoder.geocode({position:resp.latLng})
+              .then(result => {
+                console.log(result);
+
+                if ( result  ) {
+
+                  this.city = result[0].locale;
+
+                  // busca pelo codigo
+                  this.sqlite.create({
+                    name: 'cities.db',
+                    location: 'default'
+                  })
+                  .then((db: SQLiteObject) => {
+
+                    db.executeSql('SELECT ibge FROM cidades WHERE nome = (?)', [this.city])
+                    .then(resData => {
+                      // seta o codigo do ibge
+                      this.code = resData.rows.item(0).ibge;
+                    })
+                    .catch(e => console.log(e));
+                  })
+                  .catch(e => console.log(e));
+                }
+            })
+            .catch(error => console.log(error));
+
+          } );
+
+      });
   }
 
 }
